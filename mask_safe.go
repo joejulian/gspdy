@@ -4,7 +4,7 @@
 
 // +build appengine
 
-package websocket
+package gspdy
 
 func maskBytes(key [4]byte, pos int, b []byte) int {
 	for i := range b {

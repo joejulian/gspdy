@@ -4,7 +4,7 @@
 
 // !appengine
 
-package websocket
+package gspdy
 
 import (
 	"fmt"

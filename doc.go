@@ -224,4 +224,4 @@
 // more details refer to RFC 7692.
 //
 // Use of compression is experimental and may result in decreased performance.
-package websocket
+package gspdy

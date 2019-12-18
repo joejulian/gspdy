@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package websocket
+package gspdy
 
 import (
 	"bytes"
@@ -21,17 +21,17 @@ import (
 
 // ErrBadHandshake is returned when the server response to opening handshake is
 // invalid.
-var ErrBadHandshake = errors.New("websocket: bad handshake")
+var ErrBadHandshake = errors.New("gspdy: bad handshake")
 
-var errInvalidCompression = errors.New("websocket: invalid compression negotiation")
+var errInvalidCompression = errors.New("gspdy: invalid compression negotiation")
 
 // NewClient creates a new client connection using the given net connection.
 // The URL u specifies the host and request URI. Use requestHeader to specify
-// the origin (Origin), subprotocols (Sec-WebSocket-Protocol) and cookies
+// the origin (Origin) and cookies
 // (Cookie). Use the response.Header to get the selected subprotocol
-// (Sec-WebSocket-Protocol) and cookies (Set-Cookie).
+// and cookies (Set-Cookie).
 //
-// If the WebSocket handshake fails, ErrBadHandshake is returned along with a
+// If the spdy handshake fails, ErrBadHandshake is returned along with a
 // non-nil *http.Response so that callers can handle redirects, authentication,
 // etc.
 //
@@ -47,7 +47,7 @@ func NewClient(netConn net.Conn, u *url.URL, requestHeader http.Header, readBufS
 	return d.Dial(u.String(), requestHeader)
 }
 
-// A Dialer contains options for connecting to WebSocket server.
+// A Dialer contains options for connecting to gspdy server.
 type Dialer struct {
 	// NetDial specifies the dial function for creating TCP connections. If
 	// NetDial is nil, net.Dial is used.
@@ -136,13 +136,13 @@ var DefaultDialer = &Dialer{
 var nilDialer = *DefaultDialer
 
 // DialContext creates a new client connection. Use requestHeader to specify the
-// origin (Origin), subprotocols (Sec-WebSocket-Protocol) and cookies (Cookie).
+// origin (Origin) and cookies (Cookie).
 // Use the response.Header to get the selected subprotocol
-// (Sec-WebSocket-Protocol) and cookies (Set-Cookie).
+// and cookies (Set-Cookie).
 //
 // The context will be used in the request and in the Dialer.
 //
-// If the WebSocket handshake fails, ErrBadHandshake is returned along with a
+// If the gspdy handshake fails, ErrBadHandshake is returned along with a
 // non-nil *http.Response so that callers can handle redirects, authentication,
 // etcetera. The response body may not contain the entire response and does not
 // need to be closed by the application.
@@ -151,27 +151,17 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 		d = &nilDialer
 	}
 
-	challengeKey, err := generateChallengeKey()
-	if err != nil {
-		return nil, nil, err
-	}
-
 	u, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	switch u.Scheme {
-	case "ws":
+	case "http":
 		u.Scheme = "http"
-	case "wss":
+	case "https":
 		u.Scheme = "https"
 	default:
-		return nil, nil, errMalformedURL
-	}
-
-	if u.User != nil {
-		// User name and password are not allowed in websocket URIs.
 		return nil, nil, errMalformedURL
 	}
 
@@ -197,13 +187,8 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 	// RFC examples. Although the capitalization shouldn't matter, there are
 	// servers that depend on it. The Header.Set method is not used because the
 	// method canonicalizes the header names.
-	req.Header["Upgrade"] = []string{"websocket"}
+	req.Header["Upgrade"] = []string{"SPDY/3.1"}
 	req.Header["Connection"] = []string{"Upgrade"}
-	req.Header["Sec-WebSocket-Key"] = []string{challengeKey}
-	req.Header["Sec-WebSocket-Version"] = []string{"13"}
-	if len(d.Subprotocols) > 0 {
-		req.Header["Sec-WebSocket-Protocol"] = []string{strings.Join(d.Subprotocols, ", ")}
-	}
 	for k, vs := range requestHeader {
 		switch {
 		case k == "Host":
@@ -211,21 +196,11 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 				req.Host = vs[0]
 			}
 		case k == "Upgrade" ||
-			k == "Connection" ||
-			k == "Sec-Websocket-Key" ||
-			k == "Sec-Websocket-Version" ||
-			k == "Sec-Websocket-Extensions" ||
-			(k == "Sec-Websocket-Protocol" && len(d.Subprotocols) > 0):
-			return nil, nil, errors.New("websocket: duplicate header not allowed: " + k)
-		case k == "Sec-Websocket-Protocol":
-			req.Header["Sec-WebSocket-Protocol"] = vs
+			k == "Connection":
+			return nil, nil, errors.New("gspdy: duplicate header not allowed: " + k)
 		default:
 			req.Header[k] = vs
 		}
-	}
-
-	if d.EnableCompression {
-		req.Header["Sec-WebSocket-Extensions"] = []string{"permessage-deflate; server_no_context_takeover; client_no_context_takeover"}
 	}
 
 	if d.HandshakeTimeout != 0 {
@@ -348,9 +323,8 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 	}
 
 	if resp.StatusCode != 101 ||
-		!strings.EqualFold(resp.Header.Get("Upgrade"), "websocket") ||
-		!strings.EqualFold(resp.Header.Get("Connection"), "upgrade") ||
-		resp.Header.Get("Sec-Websocket-Accept") != computeAcceptKey(challengeKey) {
+		!strings.EqualFold(resp.Header.Get("Upgrade"), "SPDY/3.1") ||
+		!strings.EqualFold(resp.Header.Get("Connection"), "upgrade") {
 		// Before closing the network connection on return from this
 		// function, slurp up some of the response to aid application
 		// debugging.
@@ -375,7 +349,6 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 	}
 
 	resp.Body = ioutil.NopCloser(bytes.NewReader([]byte{}))
-	conn.subprotocol = resp.Header.Get("Sec-Websocket-Protocol")
 
 	netConn.SetDeadline(time.Time{})
 	netConn = nil // to avoid close in defer.

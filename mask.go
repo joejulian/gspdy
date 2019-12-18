@@ -4,7 +4,7 @@
 
 // +build !appengine
 
-package websocket
+package gspdy
 
 import "unsafe"
 

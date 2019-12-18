@@ -4,7 +4,7 @@
 
 // +build !go1.8
 
-package websocket
+package gspdy
 
 func (c *Conn) writeBufs(bufs ...[]byte) error {
 	for _, buf := range bufs {

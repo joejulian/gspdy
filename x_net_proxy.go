@@ -5,7 +5,7 @@
 // data.
 //
 
-package websocket
+package gspdy
 
 import (
 	"errors"

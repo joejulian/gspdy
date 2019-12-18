@@ -4,7 +4,7 @@
 
 // +build !go1.8
 
-package websocket
+package gspdy
 
 import "crypto/tls"
 

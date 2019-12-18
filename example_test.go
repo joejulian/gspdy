@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package websocket_test
+package gspdy_test
 
 import (
 	"log"
 	"net/http"
 	"testing"
 
-	"github.com/gorilla/websocket"
+	"github.com/joejulian/gspdy"
 )
 
 var (

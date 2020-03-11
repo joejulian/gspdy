@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -181,6 +182,10 @@ func equalASCIIFold(s, t string) bool {
 		s = s[size:]
 		tr, size := utf8.DecodeRuneInString(t)
 		t = t[size:]
+		fmt.Println("---")
+		fmt.Printf("sr: '%+v'\n", sr)
+		fmt.Printf("tr: '%+v'\n", tr)
+		fmt.Println("---")
 		if sr == tr {
 			continue
 		}
@@ -205,17 +210,22 @@ headers:
 		for {
 			var t string
 			t, s = nextToken(skipSpace(s))
+			fmt.Printf("===\nt='%s'\ns='%s'\n===\n", t, s)
 			if t == "" {
+				fmt.Println("*** 1")
 				continue headers
 			}
 			s = skipSpace(s)
-			if s != "" && s[0] != ',' {
+			if s != "" && s[0] != ',' && s[0] != '/' {
+				fmt.Println("*** 2")
 				continue headers
 			}
 			if equalASCIIFold(t, value) {
+				fmt.Println("*** 3")
 				return true
 			}
 			if s == "" {
+				fmt.Println("*** 4")
 				continue headers
 			}
 			s = s[1:]

@@ -77,15 +77,10 @@ func (pm *PreparedMessage) frame(key prepareKey) (int, []byte, error) {
 		mu <- true
 		var nc prepareConn
 		c := &Conn{
-			conn:                   &nc,
-			mu:                     mu,
-			isServer:               key.isServer,
-			compressionLevel:       key.compressionLevel,
-			enableWriteCompression: true,
-			writeBuf:               make([]byte, defaultWriteBufferSize+maxFrameHeaderSize),
-		}
-		if key.compress {
-			c.newCompressionWriter = compressNoContextTakeover
+			conn:     &nc,
+			mu:       mu,
+			isServer: key.isServer,
+			writeBuf: make([]byte, defaultWriteBufferSize+maxFrameHeaderSize),
 		}
 		err = c.WriteMessage(pm.messageType, pm.data)
 		frame.data = nc.buf.Bytes()

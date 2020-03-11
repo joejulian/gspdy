@@ -83,11 +83,11 @@ const (
 
 // ErrCloseSent is returned when the application writes a message to the
 // connection after sending a close message.
-var ErrCloseSent = errors.New("websocket: close sent")
+var ErrCloseSent = errors.New("gspdy: close sent")
 
 // ErrReadLimit is returned when reading a message that is larger than the
 // read limit set for the connection.
-var ErrReadLimit = errors.New("websocket: read limit exceeded")
+var ErrReadLimit = errors.New("gspdy: read limit exceeded")
 
 // netError satisfies the net Error interface.
 type netError struct {
@@ -110,7 +110,7 @@ type CloseError struct {
 }
 
 func (e *CloseError) Error() string {
-	s := []byte("websocket: close ")
+	s := []byte("gspdy: close ")
 	s = strconv.AppendInt(s, int64(e.Code), 10)
 	switch e.Code {
 	case CloseNormalClosure:
@@ -173,11 +173,11 @@ func IsUnexpectedCloseError(err error, expectedCodes ...int) bool {
 }
 
 var (
-	errWriteTimeout        = &netError{msg: "websocket: write timeout", timeout: true, temporary: true}
+	errWriteTimeout        = &netError{msg: "gspdy: write timeout", timeout: true, temporary: true}
 	errUnexpectedEOF       = &CloseError{Code: CloseAbnormalClosure, Text: io.ErrUnexpectedEOF.Error()}
-	errBadWriteOpCode      = errors.New("websocket: bad write message type")
-	errWriteClosed         = errors.New("websocket: write closed")
-	errInvalidControlFrame = errors.New("websocket: invalid control frame")
+	errBadWriteOpCode      = errors.New("gspdy: bad write message type")
+	errWriteClosed         = errors.New("gspdy: write closed")
+	errInvalidControlFrame = errors.New("gspdy: invalid control frame")
 )
 
 func newMaskKey() [4]byte {
@@ -237,7 +237,7 @@ type BufferPool interface {
 // added to the pool.
 type writePoolData struct{ buf []byte }
 
-// The Conn type represents a WebSocket connection.
+// The Conn type represents a SPDY connection.
 type Conn struct {
 	conn        net.Conn
 	isServer    bool
@@ -254,10 +254,6 @@ type Conn struct {
 
 	writeErrMu sync.Mutex
 	writeErr   error
-
-	enableWriteCompression bool
-	compressionLevel       int
-	newCompressionWriter   func(io.WriteCloser, int) io.WriteCloser
 
 	// Read fields
 	reader  io.ReadCloser // the current reader returned to the application
@@ -276,9 +272,6 @@ type Conn struct {
 	handleClose   func(int, string) error
 	readErrCount  int
 	messageReader *messageReader // the current low-level reader
-
-	readDecompress         bool // whether last read frame had RSV1 set
-	newDecompressionReader func(io.Reader) io.ReadCloser
 }
 
 func newConn(conn net.Conn, isServer bool, readBufferSize, writeBufferSize int, writeBufferPool BufferPool, br *bufio.Reader, writeBuf []byte) *Conn {
@@ -305,16 +298,14 @@ func newConn(conn net.Conn, isServer bool, readBufferSize, writeBufferSize int, 
 	mu := make(chan bool, 1)
 	mu <- true
 	c := &Conn{
-		isServer:               isServer,
-		br:                     br,
-		conn:                   conn,
-		mu:                     mu,
-		readFinal:              true,
-		writeBuf:               writeBuf,
-		writePool:              writeBufferPool,
-		writeBufSize:           writeBufferSize,
-		enableWriteCompression: true,
-		compressionLevel:       defaultCompressionLevel,
+		isServer:     isServer,
+		br:           br,
+		conn:         conn,
+		mu:           mu,
+		readFinal:    true,
+		writeBuf:     writeBuf,
+		writePool:    writeBufferPool,
+		writeBufSize: writeBufferSize,
 	}
 	c.SetCloseHandler(nil)
 	c.SetPingHandler(nil)
@@ -514,11 +505,6 @@ func (c *Conn) NextWriter(messageType int) (io.WriteCloser, error) {
 		return nil, err
 	}
 	c.writer = &mw
-	if c.newCompressionWriter != nil && c.enableWriteCompression && isData(messageType) {
-		w := c.newCompressionWriter(c.writer, c.compressionLevel)
-		mw.compress = true
-		c.writer = w
-	}
 	return c.writer, nil
 }
 
@@ -598,7 +584,7 @@ func (w *messageWriter) flushFrame(final bool, extra []byte) error {
 		copy(c.writeBuf[maxFrameHeaderSize-4:], key[:])
 		maskBytes(key, 0, c.writeBuf[maxFrameHeaderSize:w.pos])
 		if len(extra) > 0 {
-			return w.endMessage(c.writeFatal(errors.New("websocket: internal error, extra used in client mode")))
+			return w.endMessage(c.writeFatal(errors.New("gspdy: internal error, extra used in client mode")))
 		}
 	}
 
@@ -607,14 +593,14 @@ func (w *messageWriter) flushFrame(final bool, extra []byte) error {
 	// documentation for more info.
 
 	if c.isWriting {
-		panic("concurrent write to websocket connection")
+		panic("concurrent write to spdy connection")
 	}
 	c.isWriting = true
 
 	err := c.write(w.frameType, c.writeDeadline, c.writeBuf[framePos:w.pos], extra)
 
 	if !c.isWriting {
-		panic("concurrent write to websocket connection")
+		panic("concurrent write to spdy connection")
 	}
 	c.isWriting = false
 
@@ -727,20 +713,18 @@ func (w *messageWriter) Close() error {
 // WritePreparedMessage writes prepared message into connection.
 func (c *Conn) WritePreparedMessage(pm *PreparedMessage) error {
 	frameType, frameData, err := pm.frame(prepareKey{
-		isServer:         c.isServer,
-		compress:         c.newCompressionWriter != nil && c.enableWriteCompression && isData(pm.messageType),
-		compressionLevel: c.compressionLevel,
+		isServer: c.isServer,
 	})
 	if err != nil {
 		return err
 	}
 	if c.isWriting {
-		panic("concurrent write to websocket connection")
+		panic("concurrent write to spdy connection")
 	}
 	c.isWriting = true
 	err = c.write(frameType, c.writeDeadline, frameData, nil)
 	if !c.isWriting {
-		panic("concurrent write to websocket connection")
+		panic("concurrent write to spdy connection")
 	}
 	c.isWriting = false
 	return err
@@ -749,19 +733,6 @@ func (c *Conn) WritePreparedMessage(pm *PreparedMessage) error {
 // WriteMessage is a helper method for getting a writer using NextWriter,
 // writing the message and closing the writer.
 func (c *Conn) WriteMessage(messageType int, data []byte) error {
-
-	if c.isServer && (c.newCompressionWriter == nil || !c.enableWriteCompression) {
-		// Fast path with no allocations and single frame.
-
-		var mw messageWriter
-		if err := c.beginMessage(&mw, messageType); err != nil {
-			return err
-		}
-		n := copy(c.writeBuf[mw.pos:], data)
-		mw.pos += n
-		data = data[n:]
-		return mw.flushFrame(true, data)
-	}
 
 	w, err := c.NextWriter(messageType)
 	if err != nil {
@@ -774,7 +745,7 @@ func (c *Conn) WriteMessage(messageType int, data []byte) error {
 }
 
 // SetWriteDeadline sets the write deadline on the underlying network
-// connection. After a write has timed out, the websocket state is corrupt and
+// connection. After a write has timed out, the spdy state is corrupt and
 // all future writes will return an error. A zero value for t means writes will
 // not time out.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
@@ -804,12 +775,6 @@ func (c *Conn) advanceFrame() (int, error) {
 	frameType := int(p[0] & 0xf)
 	mask := p[1]&maskBit != 0
 	c.setReadRemaining(int64(p[1] & 0x7f))
-
-	c.readDecompress = false
-	if c.newDecompressionReader != nil && (p[0]&rsv1Bit) != 0 {
-		c.readDecompress = true
-		p[0] &^= rsv1Bit
-	}
 
 	if rsv := p[0] & (rsv1Bit | rsv2Bit | rsv3Bit); rsv != 0 {
 		return noFrame, c.handleProtocolError("unexpected reserved bits 0x" + strconv.FormatInt(int64(rsv), 16))
@@ -953,7 +918,7 @@ func (c *Conn) advanceFrame() (int, error) {
 
 func (c *Conn) handleProtocolError(message string) error {
 	c.WriteControl(CloseMessage, FormatCloseMessage(CloseProtocolError, message), time.Now().Add(writeWait))
-	return errors.New("websocket: " + message)
+	return errors.New("gspdy: " + message)
 }
 
 // NextReader returns the next data message received from the peer. The
@@ -986,9 +951,6 @@ func (c *Conn) NextReader() (messageType int, r io.Reader, err error) {
 		if frameType == TextMessage || frameType == BinaryMessage {
 			c.messageReader = &messageReader{c}
 			c.reader = c.messageReader
-			if c.readDecompress {
-				c.reader = c.newDecompressionReader(c.reader)
-			}
 			return frameType, c.reader, nil
 		}
 	}
@@ -998,7 +960,7 @@ func (c *Conn) NextReader() (messageType int, r io.Reader, err error) {
 	// this error, panic on repeated reads to the failed connection.
 	c.readErrCount++
 	if c.readErrCount >= 1000 {
-		panic("repeated read on failed websocket connection")
+		panic("repeated read on failed spdy connection")
 	}
 
 	return noFrame, nil, c.readErr
@@ -1042,7 +1004,7 @@ func (r *messageReader) Read(b []byte) (int, error) {
 		case err != nil:
 			c.readErr = hideTempErr(err)
 		case frameType == TextMessage || frameType == BinaryMessage:
-			c.readErr = errors.New("websocket: internal error, unexpected text or binary in Reader")
+			c.readErr = errors.New("gspdy: internal error, unexpected text or binary in Reader")
 		}
 	}
 
@@ -1070,7 +1032,7 @@ func (c *Conn) ReadMessage() (messageType int, p []byte, err error) {
 }
 
 // SetReadDeadline sets the read deadline on the underlying network connection.
-// After a read has timed out, the websocket connection state is corrupt and
+// After a read has timed out, the spdy connection state is corrupt and
 // all future reads will return an error. A zero value for t means reads will
 // not time out.
 func (c *Conn) SetReadDeadline(t time.Time) error {
@@ -1166,26 +1128,7 @@ func (c *Conn) UnderlyingConn() net.Conn {
 	return c.conn
 }
 
-// EnableWriteCompression enables and disables write compression of
-// subsequent text and binary messages. This function is a noop if
-// compression was not negotiated with the peer.
-func (c *Conn) EnableWriteCompression(enable bool) {
-	c.enableWriteCompression = enable
-}
-
-// SetCompressionLevel sets the flate compression level for subsequent text and
-// binary messages. This function is a noop if compression was not negotiated
-// with the peer. See the compress/flate package for a description of
-// compression levels.
-func (c *Conn) SetCompressionLevel(level int) error {
-	if !isValidCompressionLevel(level) {
-		return errors.New("websocket: invalid compression level")
-	}
-	c.compressionLevel = level
-	return nil
-}
-
-// FormatCloseMessage formats closeCode and text as a WebSocket close message.
+// FormatCloseMessage formats closeCode and text as a close message.
 // An empty message is returned for code CloseNoStatusReceived.
 func FormatCloseMessage(closeCode int, text string) []byte {
 	if closeCode == CloseNoStatusReceived {

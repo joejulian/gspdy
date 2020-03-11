@@ -343,8 +343,6 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 		if !snct || !cnct {
 			return nil, resp, errInvalidCompression
 		}
-		conn.newCompressionWriter = compressNoContextTakeover
-		conn.newDecompressionReader = decompressNoContextTakeover
 		break
 	}
 

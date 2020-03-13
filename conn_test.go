@@ -94,10 +94,6 @@ func TestFraming(t *testing.T) {
 				var connBuf bytes.Buffer
 				wc := newTestConn(nil, &connBuf, isServer)
 				rc := newTestConn(chunker.f(&connBuf), nil, !isServer)
-				if compress {
-					wc.newCompressionWriter = compressNoContextTakeover
-					rc.newDecompressionReader = decompressNoContextTakeover
-				}
 				for _, n := range frameSizes {
 					for _, writer := range writers {
 						name := fmt.Sprintf("z:%v, s:%v, r:%s, n:%d w:%s", compress, isServer, chunker.name, n, writer.name)

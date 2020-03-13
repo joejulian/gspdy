@@ -37,10 +37,6 @@ func TestPreparedMessage(t *testing.T) {
 		var data = []byte("this is a test")
 		var buf bytes.Buffer
 		c := newTestConn(nil, &buf, tt.isServer)
-		if tt.enableWriteCompression {
-			c.newCompressionWriter = compressNoContextTakeover
-		}
-		c.SetCompressionLevel(tt.compressionLevel)
 
 		// Seed random number generator for consistent frame mask.
 		rand.Seed(1234)

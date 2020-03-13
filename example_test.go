@@ -13,24 +13,24 @@ import (
 )
 
 var (
-	c   *websocket.Conn
+	c   *gspdy.Conn
 	req *http.Request
 )
 
-// The websocket.IsUnexpectedCloseError function is useful for identifying
+// The gspdy.IsUnexpectedCloseError function is useful for identifying
 // application and protocol errors.
 //
 // This server application works with a client application running in the
-// browser. The client application does not explicitly close the websocket. The
+// browser. The client application does not explicitly close the SPDY socket. The
 // only expected close message from the client has the code
-// websocket.CloseGoingAway. All other other close messages are likely the
+// gspdy.CloseGoingAway. All other other close messages are likely the
 // result of an application or protocol error and are logged to aid debugging.
 func ExampleIsUnexpectedCloseError() {
 
 	for {
 		messageType, p, err := c.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+			if gspdy.IsUnexpectedCloseError(err, gspdy.CloseGoingAway) {
 				log.Printf("error: %v, user-agent: %v", err, req.Header.Get("User-Agent"))
 			}
 			return

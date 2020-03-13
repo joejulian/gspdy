@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"net"
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -26,30 +25,20 @@ var subprotocolTests = []struct {
 	{" foo, bar ", []string{"foo", "bar"}},
 }
 
-func TestSubprotocols(t *testing.T) {
-	for _, st := range subprotocolTests {
-		r := http.Request{Header: http.Header{"Sec-Websocket-Protocol": {st.h}}}
-		protocols := Subprotocols(&r)
-		if !reflect.DeepEqual(st.protocols, protocols) {
-			t.Errorf("SubProtocols(%q) returned %#v, want %#v", st.h, protocols, st.protocols)
-		}
-	}
-}
-
-var isWebSocketUpgradeTests = []struct {
+var isSPDYUpgradeTests = []struct {
 	ok bool
 	h  http.Header
 }{
-	{false, http.Header{"Upgrade": {"websocket"}}},
+	{false, http.Header{"Upgrade": {"SPDY/3.1"}}},
 	{false, http.Header{"Connection": {"upgrade"}}},
-	{true, http.Header{"Connection": {"upgRade"}, "Upgrade": {"WebSocket"}}},
+	{true, http.Header{"Connection": {"upgRade"}, "Upgrade": {"SPDY/3.1"}}},
 }
 
-func TestIsWebSocketUpgrade(t *testing.T) {
-	for _, tt := range isWebSocketUpgradeTests {
-		ok := IsWebSocketUpgrade(&http.Request{Header: tt.h})
+func TestIsSPDYUpgrade(t *testing.T) {
+	for _, tt := range isSPDYUpgradeTests {
+		ok := IsSPDYUpgrade(&http.Request{Header: tt.h})
 		if tt.ok != ok {
-			t.Errorf("IsWebSocketUpgrade(%v) returned %v, want %v", tt.h, ok, tt.ok)
+			t.Errorf("IsSPDYUpgrade(%v) returned %v, want %v", tt.h, ok, tt.ok)
 		}
 	}
 }

@@ -21,14 +21,12 @@ import (
 	"net/http/httptest"
 	"net/http/httptrace"
 	"net/url"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
 
 var cstUpgrader = Upgrader{
-	Subprotocols:      []string{"p0", "p1"},
 	ReadBufferSize:    1024,
 	WriteBufferSize:   1024,
 	EnableCompression: true,
@@ -83,12 +81,6 @@ func (t cstHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != cstRawQuery {
 		t.Logf("query=%v, want %v", r.URL.RawQuery, cstRawQuery)
 		http.Error(w, "bad path", http.StatusBadRequest)
-		return
-	}
-	subprotos := Subprotocols(r)
-	if !reflect.DeepEqual(subprotos, cstDialer.Subprotocols) {
-		t.Logf("subprotols=%v, want %v", subprotos, cstDialer.Subprotocols)
-		http.Error(w, "bad protocol", http.StatusBadRequest)
 		return
 	}
 	ws, err := cstUpgrader.Upgrade(w, r, http.Header{"Set-Cookie": {"sessionID=1234"}})
@@ -555,7 +547,7 @@ func TestHost(t *testing.T) {
 
 	upgrader := Upgrader{}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if IsWebSocketUpgrade(r) {
+		if IsSPDYUpgrade(r) {
 			c, err := upgrader.Upgrade(w, r, http.Header{"X-Test-Host": {r.Host}})
 			if err != nil {
 				t.Fatal(err)

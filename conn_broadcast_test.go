@@ -5,6 +5,7 @@
 package gspdy
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"sync/atomic"
@@ -44,6 +45,15 @@ func newBroadcastConn(c *Conn) *broadcastConn {
 	}
 }
 
+func textMessages(num int) [][]byte {
+	messages := make([][]byte, num)
+	for i := 0; i < num; i++ {
+		msg := fmt.Sprintf("planet: %d, country: %d, city: %d, street: %d", i, i, i, i)
+		messages[i] = []byte(msg)
+	}
+	return messages
+}
+
 func newBroadcastBench(usePrepared, compression bool) *broadcastBench {
 	bench := &broadcastBench{
 		w:           ioutil.Discard,
@@ -69,10 +79,6 @@ func (b *broadcastBench) makeConns(numConns int) {
 
 	for i := 0; i < numConns; i++ {
 		c := newTestConn(nil, b.w, true)
-		if b.compression {
-			c.enableWriteCompression = true
-			c.newCompressionWriter = compressNoContextTakeover
-		}
 		conns[i] = newBroadcastConn(c)
 		go func(c *broadcastConn) {
 			for {
